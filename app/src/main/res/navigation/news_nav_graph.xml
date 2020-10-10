@@ -3,13 +3,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/news_nav_graph"
-    app:startDestination="@id/newsActivity">
+    app:startDestination="@id/breakingNewsFragment">
 
-    <activity
-        android:id="@+id/newsActivity"
-        android:name="com.androiddevs.mvvmnewsapp.ui.NewsActivity"
-        android:label="activity_news"
-        tools:layout="@layout/activity_news" />
     <fragment
         android:id="@+id/breakingNewsFragment"
         android:name="com.androiddevs.mvvmnewsapp.ui.fragment.BreakingNewsFragment"
