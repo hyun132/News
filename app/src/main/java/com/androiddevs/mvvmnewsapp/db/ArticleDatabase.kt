@@ -20,6 +20,7 @@ abstract class ArticleDatabase:RoomDatabase() {
         private var instance:ArticleDatabase?=null
         private val LOCK =Any()
 
+        //instance가 null일 경우 데이터베이스 만들어서 return해줌
         operator fun invoke(context: Context) = instance?: synchronized(LOCK){
             instance?:createDatabase(context).also{ instance=it}
         }
