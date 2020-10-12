@@ -1,16 +1,27 @@
 package com.androiddevs.mvvmnewsapp.ui
 
+import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.ConnectivityManager.*
+import android.net.NetworkCapabilities.*
+import android.os.Build
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.androiddevs.mvvmnewsapp.NewsApplication
 import com.androiddevs.mvvmnewsapp.models.Article
 import com.androiddevs.mvvmnewsapp.models.NewsResponse
 import com.androiddevs.mvvmnewsapp.repository.NewsRepository
 import com.androiddevs.mvvmnewsapp.utils.Resource
 import kotlinx.coroutines.launch
 import retrofit2.Response
+import java.io.IOException
 
-class NewsViewModel(val newsRepository: NewsRepository):ViewModel(){
+//                                                          ↓ ViewModel대신 사용한 이유는 Android ViewModel 안에서 applicationContext를 사용할 수 있음
+//                                                          ↓        이를 이용하여 인터넷 연결상태를 가져오기 위해서
+class NewsViewModel(app:Application, val newsRepository: NewsRepository):AndroidViewModel(app){
     val breakingNews:MutableLiveData<Resource<NewsResponse>> = MutableLiveData()
     var breakingNewsPage=1
     var breakingNewsResponse: NewsResponse?=null
@@ -25,18 +36,12 @@ class NewsViewModel(val newsRepository: NewsRepository):ViewModel(){
 
     //viewModel이 살아있는 동안 유효한 scope
    fun getBreakingNews(countryCode:String) = viewModelScope.launch {
-        //일단 데이터 가져오기 전이니까 초기값을 loading으로 해둠
-        breakingNews.postValue(Resource.Loading())
-        //suspend로 아래 줄의 작업이 완료되어야 그 아래 줄로 넘어감
-        val response = newsRepository.getBreakingNews(countryCode,breakingNewsPage)
-        breakingNews.postValue(handleBreakingNewsResponse(response))
+        safeBreakingNewsCall(countryCode)
 
     }
 
     fun searchNews(searchQuery:String) = viewModelScope.launch {
-        searchNews.postValue(Resource.Loading())
-        val response = newsRepository.searchNews(searchQuery,searchNewsPage)
-        searchNews.postValue(handleSearchNewsResponse(response))
+        safeSearchNewsCall(searchQuery)
     }
 
     private fun handleBreakingNewsResponse(response: Response<NewsResponse>) : Resource<NewsResponse>{
@@ -87,5 +92,74 @@ class NewsViewModel(val newsRepository: NewsRepository):ViewModel(){
 
     fun deleteArticle(article: Article) = viewModelScope.launch {
         newsRepository.deleteArticle(article)
+    }
+
+    private suspend fun safeSearchNewsCall(searchQuery: String){
+        breakingNews.postValue(Resource.Loading())
+        try {
+            //인터넷이 연결되어있으면
+            if(hasInternetConnection()){
+                val response = newsRepository.searchNews(searchQuery,searchNewsPage)
+                searchNews.postValue(handleSearchNewsResponse(response))
+            }else{
+                //인터넷이 연결되지 않은 경우 에러메시지를 Resource객체에 담아 보내줌(받는쪽에서 Resource형태로 받기 때문)
+                searchNews.postValue(Resource.Error("No internet connection"))
+            }
+            //그 외의 에러 발생할 경우
+        }catch (t:Throwable){
+            when(t){
+                is IOException ->searchNews.postValue(Resource.Error("Network Failure"))
+                //IO 문제 아니면 json conversion문제라고 함
+                else -> searchNews.postValue(Resource.Error("Conversion Error"))
+            }
+        }
+    }
+
+    private suspend fun safeBreakingNewsCall(countryCode:String){
+        breakingNews.postValue(Resource.Loading())
+        try {
+            //인터넷이 연결되어있으면
+            if(hasInternetConnection()){
+                val response = newsRepository.getBreakingNews(countryCode,breakingNewsPage)
+                breakingNews.postValue(handleBreakingNewsResponse(response))
+            }else{
+                //인터넷이 연결되지 않은 경우 에러메시지를 Resource객체에 담아 보내줌(받는쪽에서 Resource형태로 받기 때문)
+                breakingNews.postValue(Resource.Error("No internet connection"))
+            }
+            //그 외의 에러 발생할 경우
+        }catch (t:Throwable){
+            when(t){
+                is IOException ->breakingNews.postValue(Resource.Error("Network Failure"))
+                //IO 문제 아니면 json conversion문제라고 함
+                else -> breakingNews.postValue(Resource.Error("Conversion Error"))
+            }
+        }
+    }
+
+    private fun hasInternetConnection():Boolean{
+        //user가 인터넷에 연결되었는지
+        val connectivityManager = getApplication<NewsApplication>().getSystemService(
+            Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        if(Build.VERSION.SDK_INT>= Build.VERSION_CODES.M){
+            val activityNetwork = connectivityManager.activeNetwork ?:return false
+            val capabilities = connectivityManager.getNetworkCapabilities(activityNetwork)?: return false
+            return when{
+                capabilities.hasTransport(TRANSPORT_WIFI)->true
+                capabilities.hasTransport(TRANSPORT_CELLULAR) -> true
+                capabilities.hasTransport(TRANSPORT_ETHERNET)->true
+                else->false
+            }
+        }else{
+            connectivityManager.activeNetworkInfo?.run {
+                return when(type){
+                    TYPE_WIFI->true
+                    TYPE_MOBILE -> true
+                    TYPE_ETHERNET-> true
+                    else->false
+                }
+            }
+        }
+        return false
     }
 }
